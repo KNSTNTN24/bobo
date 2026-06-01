@@ -3,10 +3,12 @@
 Bakery-to-cafés daily delivery platform for the **BOBO** café chain.
 Web prototype (Next.js). See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 
+**Live demo:** https://bobo-gamma-five.vercel.app · deploy notes in [DEPLOY.md](./DEPLOY.md).
+
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
-- Prisma ORM, **SQLite** for the prototype (no external infra)
+- Prisma ORM + **PostgreSQL** (Neon); deployed on **Vercel**
 - JWT auth (httpOnly cookie), accounts provisioned by the admin only
 - Money stored as integer pence (GBP)
 
