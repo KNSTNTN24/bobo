@@ -1,0 +1,199 @@
+// BOBO prototype schema.
+// DB: SQLite (zero-infra prototype). Target for production: PostgreSQL.
+// SQLite has no native enums, so enum-like fields are stored as String and
+// validated in the app layer. Money is stored as integer pence (GBP).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  login        String   @unique
+  passwordHash String
+  role         String // ADMIN | BAKERY | CAFE | COURIER
+  cafe         Cafe?    @relation(fields: [cafeId], references: [id])
+  cafeId       String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  courierDeliveries Delivery[] @relation("Courier")
+  reportedIncidents Incident[] @relation("ReportedBy")
+  resolvedIncidents Incident[] @relation("ResolvedBy")
+  requestedChanges  OrderChangeRequest[] @relation("ChangeRequestedBy")
+  resolvedChanges   OrderChangeRequest[] @relation("ChangeResolvedBy")
+}
+
+model Cafe {
+  id            String  @id @default(cuid())
+  name          String
+  address       String?
+  contacts      String?
+  invoicePeriod String  @default("WEEKLY") // WEEKLY | MONTHLY
+  invoiceAnchor Int     @default(1) // weekly: ISO day 1-7; monthly: day-of-month
+  active        Boolean @default(true)
+
+  users          User[]
+  orderWeeks     OrderWeek[]
+  deliveries     Delivery[]
+  invoices       Invoice[]
+  changeRequests OrderChangeRequest[]
+}
+
+model Product {
+  id              String  @id @default(cuid())
+  name            String
+  category        String // Kitchen bread | Smoked / meat / prep | Pastry / retail bakery
+  unit            String // item | kg
+  priceP          Int // price in pence (GBP)
+  allowsNote      Boolean @default(false) // ordering allows an optional note (e.g. Pickled Goods)
+  changeLeadHours Int     @default(18) // cutoff: hours before the delivery day starts
+  active          Boolean @default(true)
+
+  orderLines     OrderLine[]
+  deliveryItems  DeliveryItem[]
+  incidents      Incident[]
+  invoiceLines   InvoiceLine[]
+  changeRequests OrderChangeRequest[]
+}
+
+model Settings {
+  id                     Int     @id @default(1)
+  canBakeryEditProducts  Boolean @default(false)
+  canBakeryEditPrices    Boolean @default(false)
+  currency               String  @default("GBP")
+  weeklyConfirmLeadHours Int     @default(36) // Type 1: café deadline = this many hours before the week starts
+}
+
+model OrderWeek {
+  id          String    @id @default(cuid())
+  cafe        Cafe      @relation(fields: [cafeId], references: [id])
+  cafeId      String
+  isoYear     Int
+  isoWeek     Int
+  status      String    @default("PROPOSED") // PROPOSED | CHANGES_REQUESTED | CONFIRMED
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  lines OrderLine[]
+
+  @@unique([cafeId, isoYear, isoWeek])
+}
+
+model OrderLine {
+  id             String    @id @default(cuid())
+  orderWeek      OrderWeek @relation(fields: [orderWeekId], references: [id], onDelete: Cascade)
+  orderWeekId    String
+  date           DateTime // specific delivery day
+  product        Product   @relation(fields: [productId], references: [id])
+  productId      String
+  qty            Int
+  proposedQty    Int       @default(0) // bakery's proposed qty — baseline to revert café edits on reject
+  priceSnapshotP Int // price in pence at order time
+  note           String? // optional note for products that allow it (e.g. Pickled Goods)
+  lockedAt       DateTime? // set when the product cutoff for this day passes
+
+  @@unique([orderWeekId, date, productId])
+}
+
+model Delivery {
+  id                String    @id @default(cuid())
+  cafe              Cafe      @relation(fields: [cafeId], references: [id])
+  cafeId            String
+  date              DateTime
+  courier           User?     @relation("Courier", fields: [courierId], references: [id])
+  courierId         String?
+  status            String    @default("PLANNED") // PLANNED | PICKED_UP | DELIVERED
+  pickupConfirmedAt DateTime?
+  deliveredAt       DateTime?
+  photoUrl          String? // delivery confirmation photo
+
+  items     DeliveryItem[]
+  incidents Incident[]
+
+  @@unique([cafeId, date])
+}
+
+model DeliveryItem {
+  id         String   @id @default(cuid())
+  delivery   Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  deliveryId String
+  product    Product  @relation(fields: [productId], references: [id])
+  productId  String
+  qty        Int
+}
+
+model Incident {
+  id           String    @id @default(cuid())
+  delivery     Delivery  @relation(fields: [deliveryId], references: [id])
+  deliveryId   String
+  product      Product   @relation(fields: [productId], references: [id])
+  productId    String
+  qty          Int
+  type         String // DAMAGE | LOSS
+  reporterRole String // COURIER | CAFE
+  reportedBy   User      @relation("ReportedBy", fields: [reportedById], references: [id])
+  reportedById String
+  photoUrl     String?
+  note         String?
+  status       String    @default("REPORTED") // REPORTED | CONFIRMED | REJECTED
+  resolvedBy   User?     @relation("ResolvedBy", fields: [resolvedById], references: [id])
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Invoice {
+  id          String    @id @default(cuid())
+  cafe        Cafe      @relation(fields: [cafeId], references: [id])
+  cafeId      String
+  period      String // WEEKLY | MONTHLY
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String    @default("DRAFT") // DRAFT | SENT
+  totalP      Int       @default(0) // total in pence
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  lines InvoiceLine[]
+}
+
+model InvoiceLine {
+  id            String  @id @default(cuid())
+  invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId     String
+  type          String // CHARGE | INCIDENT
+  product       Product @relation(fields: [productId], references: [id])
+  productId     String
+  qty           Int
+  unitPriceP    Int
+  amountP       Int
+  countsToTotal Boolean @default(true) // false for INCIDENT lines (excluded from total)
+}
+
+// Type 2: a café-initiated change to a single delivery line on a CONFIRMED week,
+// allowed only before the product's cutoff; the bakery accepts or rejects it.
+model OrderChangeRequest {
+  id           String    @id @default(cuid())
+  cafe         Cafe      @relation(fields: [cafeId], references: [id])
+  cafeId       String
+  date         DateTime // the delivery day being changed
+  product      Product   @relation(fields: [productId], references: [id])
+  productId    String
+  fromQty      Int // current confirmed qty
+  toQty        Int // requested qty
+  note         String?
+  status       String    @default("PENDING") // PENDING | ACCEPTED | REJECTED
+  createdBy    User      @relation("ChangeRequestedBy", fields: [createdById], references: [id])
+  createdById  String
+  resolvedBy   User?     @relation("ChangeResolvedBy", fields: [resolvedById], references: [id])
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+}
