@@ -1,65 +1,55 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { ROLE_LABEL } from "@/lib/roles";
-import { Topbar } from "@/components/Topbar";
-import { InvoiceDetail } from "@/components/BakeryInvoices";
+import { CafeTopbar } from "@/components/cafe/CafeShell";
+import { formatMoney } from "@/lib/money";
 import { dateKey } from "@/lib/week";
 
 export const dynamic = "force-dynamic";
 
 export default async function CafeInvoicesPage() {
   const session = await requireRole("CAFE");
-  const invoices = session.cafeId
-    ? await prisma.invoice.findMany({
-        where: { cafeId: session.cafeId, status: "SENT" },
-        orderBy: { createdAt: "desc" },
-        include: {
-          cafe: { select: { name: true } },
-          lines: { include: { product: { select: { name: true, unit: true } } } },
-        },
-      })
-    : [];
+  const [cafe, invoices] = await Promise.all([
+    session.cafeId ? prisma.cafe.findUnique({ where: { id: session.cafeId }, select: { name: true } }) : null,
+    session.cafeId
+      ? prisma.invoice.findMany({ where: { cafeId: session.cafeId, status: "SENT" }, orderBy: { periodStart: "desc" }, select: { id: true, periodStart: true, periodEnd: true, totalP: true } })
+      : [],
+  ]);
+  const totalBilled = invoices.reduce((a, i) => a + i.totalP, 0);
 
   return (
-    <div className="min-h-screen">
-      <Topbar name={session.name} roleLabel={ROLE_LABEL.CAFE} />
-      <main className="mx-auto max-w-3xl px-6 py-8">
-        <Link href="/cafe" className="text-sm text-bobo hover:underline">← Back</Link>
-        <h1 className="mb-1 mt-2 text-2xl font-bold">Invoices</h1>
-        <p className="mb-6 text-sm text-stone-500">Invoices sent by the bakery.</p>
-
-        {invoices.length === 0 ? (
-          <p className="text-stone-500">No invoices yet.</p>
-        ) : (
-          <div className="space-y-4">
-            {invoices.map((inv) => (
-              <InvoiceDetail
-                key={inv.id}
-                detail={{
-                  id: inv.id,
-                  cafeName: inv.cafe.name,
-                  period: inv.period,
-                  periodStart: dateKey(inv.periodStart),
-                  periodEnd: dateKey(inv.periodEnd),
-                  status: inv.status,
-                  totalP: inv.totalP,
-                  sentAt: inv.sentAt ? inv.sentAt.toISOString() : null,
-                  lines: inv.lines.map((l) => ({
-                    type: l.type,
-                    productName: l.product.name,
-                    unit: l.product.unit,
-                    qty: l.qty,
-                    unitPriceP: l.unitPriceP,
-                    amountP: l.amountP,
-                    countsToTotal: l.countsToTotal,
-                  })),
-                }}
-              />
-            ))}
+    <>
+      <CafeTopbar eyebrow={`${cafe?.name ?? "Café"} · Café`} title="Invoices" />
+      <div className="content">
+        <div className="cols-2">
+          <div className="bigstat">
+            <div className="bigstat-lab">Total billed</div>
+            <div className="bigstat-val">{formatMoney(totalBilled)}</div>
+            <div className="bigstat-sub">{invoices.length} invoice{invoices.length === 1 ? "" : "s"} received</div>
           </div>
-        )}
-      </main>
-    </div>
+          <div className="kpi" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div className="kpi-lab">Invoices</div>
+            <div className="kpi-val" style={{ fontSize: 30 }}>{invoices.length}</div>
+            <div className="kpi-foot"><span>Weekly billing · no VAT</span></div>
+          </div>
+        </div>
+        <div className="panel-hd" style={{ marginTop: 30 }}><span className="panel-title">Invoice history</span></div>
+        <div className="tbl">
+          <div className="tbl-row head" style={{ gridTemplateColumns: "1.6fr 1fr 120px" }}>
+            <span>Period</span><span>Status</span><span className="cell-r">Amount</span>
+          </div>
+          {invoices.length === 0 ? (
+            <div className="tbl-row body" style={{ gridTemplateColumns: "1fr" }}><span className="cell-sub" style={{ marginTop: 0 }}>No invoices received yet.</span></div>
+          ) : (
+            invoices.map((i) => (
+              <div key={i.id} className="tbl-row body" style={{ gridTemplateColumns: "1.6fr 1fr 120px" }}>
+                <div className="cell-main">{dateKey(i.periodStart)} → {dateKey(i.periodEnd)}</div>
+                <div><span className="pill pill-green">Sent</span></div>
+                <div className="cell-r cell-num">{formatMoney(i.totalP)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
   );
 }
