@@ -201,6 +201,11 @@ export function CafeOrderScreen({ cafeId, cafeName, initialYear, initialWeek }: 
                   <span className="bic"><WIcon name="hourglass" size={15} sw={2} stroke="#6e5b2e" /></span>
                   <div><b>Draft from the bakery.</b> Confirm or adjust before the weekly deadline.</div>
                 </div>
+              ) : data.phase === "CURRENT" ? (
+                <div className="wbanner ok" style={{ flex: 1, minWidth: 280 }}>
+                  <span className="bic"><WIcon name="clock" size={15} sw={2} stroke="#14503c" /></span>
+                  <div><b>Current week.</b> The confirmation window has closed — the bakery&rsquo;s order stands.</div>
+                </div>
               ) : (
                 <div className="wbanner ok" style={{ flex: 1, minWidth: 280 }}>
                   <span className="bic"><WIcon name="box" size={15} sw={1.8} stroke="#14503c" /></span>
@@ -302,10 +307,12 @@ export function CafeOrderScreen({ cafeId, cafeName, initialYear, initialWeek }: 
                   <button className="btn done" disabled><WIcon name="check" size={19} sw={2.3} stroke="#fff" /> Week confirmed</button>
                 ) : changesReq ? (
                   <button className="btn ghost" disabled>Awaiting bakery</button>
+                ) : data.phase === "CURRENT" ? (
+                  <button className="btn ghost" disabled>Confirmation closed</button>
                 ) : (
                   <button className="btn ghost" disabled>Week closed</button>
                 )}
-                <div className="cart-deadline">{confirmed ? "Per-day changes close at each product cutoff" : "Confirm before the weekly deadline"}</div>
+                <div className="cart-deadline">{confirmed ? "Per-day changes close at each product cutoff" : data.phase === "FUTURE" ? "Confirm before the weekly deadline" : data.phase === "CURRENT" ? "The confirmation window has closed" : "This week is closed"}</div>
               </div>
             </div>
           </aside>
